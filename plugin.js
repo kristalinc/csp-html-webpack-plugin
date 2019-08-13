@@ -4,7 +4,10 @@ const uniq = require('lodash/uniq');
 const compact = require('lodash/compact');
 const flatten = require('lodash/flatten');
 const isFunction = require('lodash/isFunction');
+const template = require('lodash/template');
 const get = require('lodash/get');
+const fs = require('fs');
+const path = require('path');
 
 // Attempt to load HtmlWebpackPlugin@4
 // Borrowed from https://github.com/waysact/webpack-subresource-integrity/blob/master/index.js
@@ -25,8 +28,17 @@ const defaultPolicy = {
   'style-src': ["'unsafe-inline'", "'self'", "'unsafe-eval'"]
 };
 
+const defaultTemplateData = {
+  policy: {}
+};
+
 const defaultAdditionalOpts = {
   enabled: true,
+  includeMetaTag: true,
+  exportPolicy: {
+    // eslint-disable-next-line no-template-curly-in-string
+    template: '${policy}'
+  },
   hashingMethod: 'sha256',
   hashEnabled: {
     'script-src': true,
@@ -52,6 +64,9 @@ class CspHtmlWebpackPlugin {
     this.opts = Object.freeze(
       Object.assign({}, defaultAdditionalOpts, additionalOpts)
     );
+
+    // local template data to feed optional exported template config
+    this.templateData = defaultTemplateData;
 
     // valid hashes from https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy/script-src#Sources
     if (!['sha256', 'sha384', 'sha512'].includes(this.opts.hashingMethod)) {
@@ -296,16 +311,6 @@ class CspHtmlWebpackPlugin {
       return compileCb(null, htmlPluginData);
     }
 
-    let metaTag = $('meta[http-equiv="Content-Security-Policy"]');
-
-    // Add element if it doesn't exist.
-    if (!metaTag.length) {
-      metaTag = cheerio.load('<meta http-equiv="Content-Security-Policy">')(
-        'meta'
-      );
-      metaTag.prependTo($('head'));
-    }
-
     // get all nonces for script and style tags
     const scriptNonce = this.setNonce($, 'script-src', 'script[src]');
     const styleNonce = this.setNonce($, 'style-src', 'link[rel="stylesheet"]');
@@ -314,26 +319,61 @@ class CspHtmlWebpackPlugin {
     const scriptShas = this.getShas($, 'script-src', 'script:not([src])');
     const styleShas = this.getShas($, 'style-src', 'style:not([href])');
 
-    // build the policy into the context attr of the csp meta tag
-    metaTag.attr(
-      'content',
-      this.buildPolicy({
-        ...this.policy,
-        'script-src': flatten([this.policy['script-src']]).concat(
-          scriptShas,
-          scriptNonce
-        ),
-        'style-src': flatten([this.policy['style-src']]).concat(
-          styleShas,
-          styleNonce
-        )
-      })
-    );
+    const policy = this.buildPolicy({
+      ...this.policy,
+      'script-src': flatten([this.policy['script-src']]).concat(
+        scriptShas,
+        scriptNonce
+      ),
+      'style-src': flatten([this.policy['style-src']]).concat(
+        styleShas,
+        styleNonce
+      )
+    });
+
+    if (this.opts.includeMetaTag) {
+      let metaTag = $('meta[http-equiv="Content-Security-Policy"]');
+
+      // Add element if it doesn't exist.
+      if (!metaTag.length) {
+        metaTag = cheerio.load('<meta http-equiv="Content-Security-Policy">')(
+          'meta'
+        );
+        metaTag.prependTo($('head'));
+      }
+
+      // build the policy into the context attr of the csp meta tag
+      metaTag.attr('content', policy);
+    }
+
+    // Store the latest built policy onto the local templateData
+    this.templateData.policy = policy;
 
     // eslint-disable-next-line no-param-reassign
     htmlPluginData.html = $.html();
 
     return compileCb(null, htmlPluginData);
+  }
+
+  /**
+   * Write policy to an external config file based on specified options.
+   *
+   * @param compilation
+   * @param callback
+   * @returns {*}
+   */
+  exportPolicy(compilation, callback) {
+    if (!this.opts.exportPolicy.file) return;
+
+    const options = this.opts.exportPolicy;
+    const compiledTpl = template(options.template);
+
+    fs.mkdirSync(path.dirname(options.file), { recursive: true });
+    fs.writeFileSync(options.file, compiledTpl(this.templateData), {
+      encoding: 'utf-8'
+    });
+
+    callback();
   }
 
   /**
@@ -370,6 +410,12 @@ class CspHtmlWebpackPlugin {
           );
         }
       });
+
+      // Write external config (if specified)
+      compiler.hooks.done.tapAsync(
+        'CspHtmlWebpackPlugin',
+        this.exportPolicy.bind(this)
+      );
     } else {
       compiler.plugin('compilation', compilation => {
         compilation.plugin(
@@ -381,6 +427,8 @@ class CspHtmlWebpackPlugin {
           this.processCsp.bind(this)
         );
       });
+
+      compiler.plugin('done', this.exportPolicy.bind(this));
     }
   }
 }
