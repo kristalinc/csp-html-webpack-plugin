@@ -851,5 +851,54 @@ describe('CspHtmlWebpackPlugin', () => {
         done();
       });
     });
+
+    it('does not add the meta tag if includeMetaTag is false', done => {
+      const config = createWebpackConfig([
+        new HtmlWebpackPlugin({
+          filename: path.join(WEBPACK_OUTPUT_DIR, 'index.html'),
+          template: path.join(
+            __dirname,
+            'test-utils',
+            'fixtures',
+            'with-no-meta-tag.html'
+          )
+        }),
+        new CspHtmlWebpackPlugin()
+      ]);
+
+      webpackCompile(config, (csps, selectors) => {
+        const $ = selectors['index.html'];
+        const metaTags = $('meta[http-equiv="Content-Security-Policy"]');
+
+        expect(metaTags.length).toEqual(0);
+
+        done();
+      });
+    });
+
+    it('does not alter an existing CSP meta tag if includeMetaTag is false', done => {
+      const config = createWebpackConfig([
+        new HtmlWebpackPlugin({
+          filename: path.join(WEBPACK_OUTPUT_DIR, 'index.html'),
+          template: path.join(
+            __dirname,
+            'test-utils',
+            'fixtures',
+            'with-no-content-attr.html'
+          )
+        }),
+        new CspHtmlWebpackPlugin()
+      ]);
+
+      webpackCompile(config, (csps, selectors) => {
+        const $ = selectors['index.html'];
+        const metaTags = $('meta[http-equiv="Content-Security-Policy"]');
+
+        expect(metaTags.length).toEqual(1);
+        expect(metaTags[0].attribs.content).toBeUndefined();
+
+        done();
+      });
+    });
   });
 });

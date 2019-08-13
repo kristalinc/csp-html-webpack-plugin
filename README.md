@@ -38,6 +38,10 @@ This `CspHtmlWebpackPlugin` accepts 2 params with the following structure:
   - `{boolean|Function}` enabled - if false, or the function returns false, the empty CSP tag will be stripped from the html output.
     - The `htmlPluginData` is passed into the function as it's first param.
     - If `enabled` is set the false, it will disable generating a CSP for all instances of `HtmlWebpackPlugin` in your webpack config.
+  - `{boolean}` includeMetaTag - if false, the CSP policy will not be written into a meta tag in the html output.
+  - `{object}` exportPolicy (optional) - allows for the generated CSP policy to be exported to a file based on a provided template
+    - `{string}` file - relative path to the exported file
+    - `{string}` template - a template expanding the policy into the exported file - uses [Lodash template](https://lodash.com/docs/4.17.15#template)
   - `{string}` hashingMethod - accepts 'sha256', 'sha384', 'sha512' - your node version must also accept this hashing method.
   - `{object}` hashEnabled - a `<string, boolean>` entry for which policy rules are allowed to include hashes
   - `{object}` nonceEnabled - a `<string, boolean>` entry for which policy rules are allowed to include nonces
@@ -94,6 +98,11 @@ If 2 policies have the same key/policy rule, the former policy will override the
 new HtmlWebpackPlugin({
   cspPlugin: {
     enabled: true,
+    includeMetaTag: false,
+    exportPolicy: {
+      file: 'dist/config/csp-nginx.conf',
+      template: 'add_header Content-Security-Policy "${policy}";\n'
+    },
     policy: {
       'base-uri': "'self'",
       'object-src': "'none'",
@@ -118,6 +127,11 @@ new CspHtmlWebpackPlugin({
   'style-src': ["'unsafe-inline'", "'self'", "'unsafe-eval'"]
 }, {
   enabled: true,
+  includeMetaTag: false,
+  exportPolicy: {
+    file: 'dist/config/csp-nginx.conf',
+    template: 'add_header Content-Security-Policy "${policy}";\n'
+  },
   hashingMethod: 'sha256',
   hashEnabled: {
     'script-src': true,
